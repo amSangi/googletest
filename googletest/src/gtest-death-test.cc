@@ -65,12 +65,12 @@
 # endif  // GTEST_OS_QNX
 
 # if GTEST_OS_FUCHSIA
+#  include <lib/fdio/fd.h>
 #  include <lib/fdio/io.h>
 #  include <lib/fdio/spawn.h>
-#  include <lib/fdio/util.h>
-#  include <lib/zx/socket.h>
 #  include <lib/zx/port.h>
 #  include <lib/zx/process.h>
+#  include <lib/zx/socket.h>
 #  include <zircon/processargs.h>
 #  include <zircon/syscalls.h>
 #  include <zircon/syscalls/policy.h>
@@ -246,7 +246,7 @@ static std::string DeathTestThreadWarning(size_t thread_count) {
     msg << "detected " << thread_count << " threads.";
   }
   msg << " See "
-         "https://github.com/abseil/googletest/blob/master/googletest/docs/"
+         "https://github.com/google/googletest/blob/master/googletest/docs/"
          "advanced.md#death-tests-and-threads"
       << " for more explanation and suggested solutions, especially if"
       << " this is the last message you see before your test times out.";
@@ -274,8 +274,6 @@ static const int kFuchsiaReadPipeFd = 3;
 // statement, which is not allowed; THREW means that the test statement
 // returned control by throwing an exception.  IN_PROGRESS means the test
 // has not yet concluded.
-// FIXME: Unify names and possibly values for
-// AbortReason, DeathTestOutcome, and flag characters above.
 enum DeathTestOutcome { IN_PROGRESS, DIED, LIVED, RETURNED, THREW };
 
 // Routine for aborting the program which is safe to call from an
@@ -755,9 +753,9 @@ DeathTest::TestRole WindowsDeathTest::AssumeRole() {
       FALSE,      // The initial state is non-signalled.
       nullptr));  // The even is unnamed.
   GTEST_DEATH_TEST_CHECK_(event_handle_.Get() != nullptr);
-  const std::string filter_flag =
-      std::string("--") + GTEST_FLAG_PREFIX_ + kFilterFlag + "=" +
-      info->test_case_name() + "." + info->name();
+  const std::string filter_flag = std::string("--") + GTEST_FLAG_PREFIX_ +
+                                  kFilterFlag + "=" + info->test_suite_name() +
+                                  "." + info->name();
   const std::string internal_flag =
       std::string("--") + GTEST_FLAG_PREFIX_ + kInternalRunDeathTestFlag +
       "=" + file_ + "|" + StreamableToString(line_) + "|" +
@@ -974,9 +972,9 @@ DeathTest::TestRole FuchsiaDeathTest::AssumeRole() {
   FlushInfoLog();
 
   // Build the child process command line.
-  const std::string filter_flag =
-      std::string("--") + GTEST_FLAG_PREFIX_ + kFilterFlag + "="
-      + info->test_case_name() + "." + info->name();
+  const std::string filter_flag = std::string("--") + GTEST_FLAG_PREFIX_ +
+                                  kFilterFlag + "=" + info->test_suite_name() +
+                                  "." + info->name();
   const std::string internal_flag =
       std::string("--") + GTEST_FLAG_PREFIX_ + kInternalRunDeathTestFlag + "="
       + file_ + "|"
@@ -1008,10 +1006,8 @@ DeathTest::TestRole FuchsiaDeathTest::AssumeRole() {
       zx::socket::create(0, &stderr_producer_socket, &stderr_socket_);
   GTEST_DEATH_TEST_CHECK_(status >= 0);
   int stderr_producer_fd = -1;
-  zx_handle_t producer_handle[1] = { stderr_producer_socket.release() };
-  uint32_t producer_handle_type[1] = { PA_FDIO_SOCKET };
-  status = fdio_create_fd(
-      producer_handle, producer_handle_type, 1, &stderr_producer_fd);
+  status =
+      fdio_fd_create(stderr_producer_socket.release(), &stderr_producer_fd);
   GTEST_DEATH_TEST_CHECK_(status >= 0);
 
   // Make the stderr socket nonblocking.
@@ -1413,9 +1409,9 @@ DeathTest::TestRole ExecDeathTest::AssumeRole() {
   // it be closed when the child process does an exec:
   GTEST_DEATH_TEST_CHECK_(fcntl(pipe_fd[1], F_SETFD, 0) != -1);
 
-  const std::string filter_flag =
-      std::string("--") + GTEST_FLAG_PREFIX_ + kFilterFlag + "="
-      + info->test_case_name() + "." + info->name();
+  const std::string filter_flag = std::string("--") + GTEST_FLAG_PREFIX_ +
+                                  kFilterFlag + "=" + info->test_suite_name() +
+                                  "." + info->name();
   const std::string internal_flag =
       std::string("--") + GTEST_FLAG_PREFIX_ + kInternalRunDeathTestFlag + "="
       + file_ + "|" + StreamableToString(line_) + "|"
@@ -1523,8 +1519,6 @@ static int GetStatusFileDescriptor(unsigned int parent_process_id,
                    StreamableToString(parent_process_id));
   }
 
-  // FIXME: Replace the following check with a
-  // compile-time assertion when available.
   GTEST_CHECK_(sizeof(HANDLE) <= sizeof(size_t));
 
   const HANDLE write_handle =
