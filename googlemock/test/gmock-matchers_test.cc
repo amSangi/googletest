@@ -114,31 +114,32 @@ std::vector<std::unique_ptr<int>> MakeUniquePtrs(const std::vector<int>& ints) {
 }
 
 // For testing ExplainMatchResultTo().
-class GreaterThanMatcher : public MatcherInterface<int> {
+template <typename T = int>
+class GreaterThanMatcher : public MatcherInterface<T> {
  public:
-  explicit GreaterThanMatcher(int rhs) : rhs_(rhs) {}
+  explicit GreaterThanMatcher(T rhs) : rhs_(rhs) {}
 
   void DescribeTo(ostream* os) const override { *os << "is > " << rhs_; }
 
-  bool MatchAndExplain(int lhs, MatchResultListener* listener) const override {
-    const int diff = lhs - rhs_;
-    if (diff > 0) {
-      *listener << "which is " << diff << " more than " << rhs_;
-    } else if (diff == 0) {
+  bool MatchAndExplain(T lhs, MatchResultListener* listener) const override {
+    if (lhs > rhs_) {
+      *listener << "which is " << (lhs - rhs_) << " more than " << rhs_;
+    } else if (lhs == rhs_) {
       *listener << "which is the same as " << rhs_;
     } else {
-      *listener << "which is " << -diff << " less than " << rhs_;
+      *listener << "which is " << (rhs_ - lhs) << " less than " << rhs_;
     }
 
     return lhs > rhs_;
   }
 
  private:
-  int rhs_;
+  const T rhs_;
 };
 
-Matcher<int> GreaterThan(int n) {
-  return MakeMatcher(new GreaterThanMatcher(n));
+template <typename T>
+Matcher<T> GreaterThan(T n) {
+  return MakeMatcher(new GreaterThanMatcher<T>(n));
 }
 
 std::string OfType(const std::string& type_name) {
@@ -410,7 +411,7 @@ TEST(StringMatcherTest,
 // MatcherInterface* without requiring the user to explicitly
 // write the type.
 TEST(MakeMatcherTest, ConstructsMatcherFromMatcherInterface) {
-  const MatcherInterface<int>* dummy_impl = nullptr;
+  const MatcherInterface<int>* dummy_impl = new EvenMatcherImpl;
   Matcher<int> m = MakeMatcher(dummy_impl);
 }
 
@@ -1074,7 +1075,12 @@ struct MoveHelper {
   MOCK_METHOD1(Call, void(MoveOnly));
 };
 
+// Disable this test in VS 2015 (version 14), where it fails when SEH is enabled
+#if defined(_MSC_VER) && (_MSC_VER < 1910)
+TEST(ComparisonBaseTest, DISABLED_WorksWithMoveOnly) {
+#else
 TEST(ComparisonBaseTest, WorksWithMoveOnly) {
+#endif
   MoveOnly m{0};
   MoveHelper helper;
 
@@ -1858,6 +1864,33 @@ TEST(EndsWithTest, MatchesStringWithGivenSuffix) {
 TEST(EndsWithTest, CanDescribeSelf) {
   Matcher<const std::string> m = EndsWith("Hi");
   EXPECT_EQ("ends with \"Hi\"", Describe(m));
+}
+
+// Tests WhenBase64Unescaped.
+
+TEST(WhenBase64UnescapedTest, MatchesUnescapedBase64Strings) {
+  const Matcher<const char*> m1 = WhenBase64Unescaped(EndsWith("!"));
+  EXPECT_FALSE(m1.Matches("invalid base64"));
+  EXPECT_FALSE(m1.Matches("aGVsbG8gd29ybGQ="));  // hello world
+  EXPECT_TRUE(m1.Matches("aGVsbG8gd29ybGQh"));   // hello world!
+
+  const Matcher<const std::string&> m2 = WhenBase64Unescaped(EndsWith("!"));
+  EXPECT_FALSE(m2.Matches("invalid base64"));
+  EXPECT_FALSE(m2.Matches("aGVsbG8gd29ybGQ="));  // hello world
+  EXPECT_TRUE(m2.Matches("aGVsbG8gd29ybGQh"));   // hello world!
+
+#if GTEST_INTERNAL_HAS_STRING_VIEW
+  const Matcher<const internal::StringView&> m3 =
+      WhenBase64Unescaped(EndsWith("!"));
+  EXPECT_FALSE(m3.Matches("invalid base64"));
+  EXPECT_FALSE(m3.Matches("aGVsbG8gd29ybGQ="));  // hello world
+  EXPECT_TRUE(m3.Matches("aGVsbG8gd29ybGQh"));   // hello world!
+#endif  // GTEST_INTERNAL_HAS_STRING_VIEW
+}
+
+TEST(WhenBase64UnescapedTest, CanDescribeSelf) {
+  const Matcher<const char*> m = WhenBase64Unescaped(EndsWith("!"));
+  EXPECT_EQ("matches after Base64Unescape ends with \"!\"", Describe(m));
 }
 
 // Tests MatchesRegex().
@@ -2764,6 +2797,34 @@ TEST(AnyOfTest, VariadicMatchesWhenAnyMatches) {
                 "23", "24", "25", "26", "27", "28", "29", "30", "31", "32",
                 "33", "34", "35", "36", "37", "38", "39", "40", "41", "42",
                 "43", "44", "45", "46", "47", "48", "49", "50"));
+}
+
+TEST(ConditionalTest, MatchesFirstIfCondition) {
+  Matcher<std::string> eq_red = Eq("red");
+  Matcher<std::string> ne_red = Ne("red");
+  Matcher<std::string> m = Conditional(true, eq_red, ne_red);
+  EXPECT_TRUE(m.Matches("red"));
+  EXPECT_FALSE(m.Matches("green"));
+
+  StringMatchResultListener listener;
+  StringMatchResultListener expected;
+  EXPECT_FALSE(m.MatchAndExplain("green", &listener));
+  EXPECT_FALSE(eq_red.MatchAndExplain("green", &expected));
+  EXPECT_THAT(listener.str(), Eq(expected.str()));
+}
+
+TEST(ConditionalTest, MatchesSecondIfCondition) {
+  Matcher<std::string> eq_red = Eq("red");
+  Matcher<std::string> ne_red = Ne("red");
+  Matcher<std::string> m = Conditional(false, eq_red, ne_red);
+  EXPECT_FALSE(m.Matches("red"));
+  EXPECT_TRUE(m.Matches("green"));
+
+  StringMatchResultListener listener;
+  StringMatchResultListener expected;
+  EXPECT_FALSE(m.MatchAndExplain("red", &listener));
+  EXPECT_FALSE(ne_red.MatchAndExplain("red", &expected));
+  EXPECT_THAT(listener.str(), Eq(expected.str()));
 }
 
 // Tests the variadic version of the ElementsAreMatcher
@@ -3721,6 +3782,105 @@ TEST(PointeeTest, ReferenceToNonConstRawPointer) {
   EXPECT_FALSE(m.Matches(p));
   p = nullptr;
   EXPECT_FALSE(m.Matches(p));
+}
+
+TEST(PointeeTest, SmartPointer) {
+  const Matcher<std::unique_ptr<int>> m = Pointee(Ge(0));
+
+  std::unique_ptr<int> n(new int(1));
+  EXPECT_TRUE(m.Matches(n));
+}
+
+TEST(PointeeTest, SmartPointerToConst) {
+  const Matcher<std::unique_ptr<const int>> m = Pointee(Ge(0));
+
+  // There's no implicit conversion from unique_ptr<int> to const
+  // unique_ptr<const int>, so we must pass a unique_ptr<const int> into the
+  // matcher.
+  std::unique_ptr<const int> n(new int(1));
+  EXPECT_TRUE(m.Matches(n));
+}
+
+TEST(PointerTest, RawPointer) {
+  int n = 1;
+  const Matcher<int*> m = Pointer(Eq(&n));
+
+  EXPECT_TRUE(m.Matches(&n));
+
+  int* p = nullptr;
+  EXPECT_FALSE(m.Matches(p));
+  EXPECT_FALSE(m.Matches(nullptr));
+}
+
+TEST(PointerTest, RawPointerToConst) {
+  int n = 1;
+  const Matcher<const int*> m = Pointer(Eq(&n));
+
+  EXPECT_TRUE(m.Matches(&n));
+
+  int* p = nullptr;
+  EXPECT_FALSE(m.Matches(p));
+  EXPECT_FALSE(m.Matches(nullptr));
+}
+
+TEST(PointerTest, SmartPointer) {
+  std::unique_ptr<int> n(new int(10));
+  int* raw_n = n.get();
+  const Matcher<std::unique_ptr<int>> m = Pointer(Eq(raw_n));
+
+  EXPECT_TRUE(m.Matches(n));
+}
+
+TEST(PointerTest, SmartPointerToConst) {
+  std::unique_ptr<const int> n(new int(10));
+  const int* raw_n = n.get();
+  const Matcher<std::unique_ptr<const int>> m = Pointer(Eq(raw_n));
+
+  // There's no implicit conversion from unique_ptr<int> to const
+  // unique_ptr<const int>, so we must pass a unique_ptr<const int> into the
+  // matcher.
+  std::unique_ptr<const int> p(new int(10));
+  EXPECT_FALSE(m.Matches(p));
+}
+
+TEST(AddressTest, NonConst) {
+  int n = 1;
+  const Matcher<int> m = Address(Eq(&n));
+
+  EXPECT_TRUE(m.Matches(n));
+
+  int other = 5;
+
+  EXPECT_FALSE(m.Matches(other));
+
+  int& n_ref = n;
+
+  EXPECT_TRUE(m.Matches(n_ref));
+}
+
+TEST(AddressTest, Const) {
+  const int n = 1;
+  const Matcher<int> m = Address(Eq(&n));
+
+  EXPECT_TRUE(m.Matches(n));
+
+  int other = 5;
+
+  EXPECT_FALSE(m.Matches(other));
+}
+
+TEST(AddressTest, MatcherDoesntCopy) {
+  std::unique_ptr<int> n(new int(1));
+  const Matcher<std::unique_ptr<int>> m = Address(Eq(&n));
+
+  EXPECT_TRUE(m.Matches(n));
+}
+
+TEST(AddressTest, Describe) {
+  Matcher<int> matcher = Address(_);
+  EXPECT_EQ("has address that is anything", Describe(matcher));
+  EXPECT_EQ("does not have address that is anything",
+            DescribeNegation(matcher));
 }
 
 MATCHER_P(FieldIIs, inner_matcher, "") {
@@ -6223,7 +6383,7 @@ TEST_P(BipartiteRandomTest, LargerNets) {
   int iters = GetParam().second;
   MatchMatrix graph(static_cast<size_t>(nodes), static_cast<size_t>(nodes));
 
-  auto seed = static_cast<uint32_t>(GTEST_FLAG(random_seed));
+  auto seed = static_cast<uint32_t>(GTEST_FLAG_GET(random_seed));
   if (seed == 0) {
     seed = static_cast<uint32_t>(time(nullptr));
   }
@@ -7919,6 +8079,7 @@ TEST(ContainsTest, ListMatchesWhenElementIsInContainer) {
   some_list.push_back(3);
   some_list.push_back(1);
   some_list.push_back(2);
+  some_list.push_back(3);
   EXPECT_THAT(some_list, Contains(1));
   EXPECT_THAT(some_list, Contains(Gt(2.5)));
   EXPECT_THAT(some_list, Contains(Eq(2.0f)));
@@ -8042,6 +8203,79 @@ TEST(ContainsTest, WorksForTwoDimensionalNativeArray) {
   EXPECT_THAT(a, Not(Contains(ElementsAre(3, 4, 5))));
   EXPECT_THAT(a, Contains(Not(Contains(5))));
 }
+
+// Tests Contains().Times().
+
+TEST(ContainsTimes, ListMatchesWhenElementQuantityMatches) {
+  list<int> some_list;
+  some_list.push_back(3);
+  some_list.push_back(1);
+  some_list.push_back(2);
+  some_list.push_back(3);
+  EXPECT_THAT(some_list, Contains(3).Times(2));
+  EXPECT_THAT(some_list, Contains(2).Times(1));
+  EXPECT_THAT(some_list, Contains(Ge(2)).Times(3));
+  EXPECT_THAT(some_list, Contains(Ge(2)).Times(Gt(2)));
+  EXPECT_THAT(some_list, Contains(4).Times(0));
+  EXPECT_THAT(some_list, Contains(_).Times(4));
+  EXPECT_THAT(some_list, Not(Contains(5).Times(1)));
+  EXPECT_THAT(some_list, Contains(5).Times(_));  // Times(_) always matches
+  EXPECT_THAT(some_list, Not(Contains(3).Times(1)));
+  EXPECT_THAT(some_list, Contains(3).Times(Not(1)));
+  EXPECT_THAT(list<int>{}, Not(Contains(_)));
+}
+
+TEST(ContainsTimes, ExplainsMatchResultCorrectly) {
+  const int a[2] = {1, 2};
+  Matcher<const int(&)[2]> m = Contains(2).Times(3);
+  EXPECT_EQ(
+      "whose element #1 matches but whose match quantity of 1 does not match",
+      Explain(m, a));
+
+  m = Contains(3).Times(0);
+  EXPECT_EQ("has no element that matches and whose match quantity of 0 matches",
+            Explain(m, a));
+
+  m = Contains(3).Times(4);
+  EXPECT_EQ(
+      "has no element that matches and whose match quantity of 0 does not "
+      "match",
+      Explain(m, a));
+
+  m = Contains(2).Times(4);
+  EXPECT_EQ(
+      "whose element #1 matches but whose match quantity of 1 does not "
+      "match",
+      Explain(m, a));
+
+  m = Contains(GreaterThan(0)).Times(2);
+  EXPECT_EQ("whose elements (0, 1) match and whose match quantity of 2 matches",
+            Explain(m, a));
+
+  m = Contains(GreaterThan(10)).Times(Gt(1));
+  EXPECT_EQ(
+      "has no element that matches and whose match quantity of 0 does not "
+      "match",
+      Explain(m, a));
+
+  m = Contains(GreaterThan(0)).Times(GreaterThan<size_t>(5));
+  EXPECT_EQ(
+      "whose elements (0, 1) match but whose match quantity of 2 does not "
+      "match, which is 3 less than 5",
+      Explain(m, a));
+}
+
+TEST(ContainsTimes, DescribesItselfCorrectly) {
+  Matcher<vector<int>> m = Contains(1).Times(2);
+  EXPECT_EQ("quantity of elements that match is equal to 1 is equal to 2",
+            Describe(m));
+
+  Matcher<vector<int>> m2 = Not(m);
+  EXPECT_EQ("quantity of elements that match is equal to 1 isn't equal to 2",
+            Describe(m2));
+}
+
+// Tests AllOfArray()
 
 TEST(AllOfArrayTest, BasicForms) {
   // Iterator

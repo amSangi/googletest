@@ -124,20 +124,6 @@ TEST(ConvertIdentifierNameToWordsTest, WorksWhenNameIsMixture) {
             ConvertIdentifierNameToWords("_Chapter11Section_1_"));
 }
 
-TEST(PointeeOfTest, WorksForSmartPointers) {
-  EXPECT_TRUE(
-      (std::is_same<int, PointeeOf<std::unique_ptr<int>>::type>::value));
-  EXPECT_TRUE(
-      (std::is_same<std::string,
-                    PointeeOf<std::shared_ptr<std::string>>::type>::value));
-}
-
-TEST(PointeeOfTest, WorksForRawPointers) {
-  EXPECT_TRUE((std::is_same<int, PointeeOf<int*>::type>::value));
-  EXPECT_TRUE((std::is_same<const char, PointeeOf<const char*>::type>::value));
-  EXPECT_TRUE((std::is_void<PointeeOf<void*>::type>::value));
-}
-
 TEST(GetRawPointerTest, WorksForSmartPointers) {
   const char* const raw_p1 = new const char('a');  // NOLINT
   const std::unique_ptr<const char> p1(raw_p1);
@@ -454,7 +440,8 @@ TEST(LogTest, NoSkippingStackFrameInOptMode) {
   const std::string log = GetCapturedStdout();
 
   std::string expected_trace =
-      (testing::Message() << GTEST_FLAG(stack_trace_depth) << "::").GetString();
+      (testing::Message() << GTEST_FLAG_GET(stack_trace_depth) << "::")
+          .GetString();
   std::string expected_message =
       "\nGMOCK WARNING:\n"
       "Test log.\n"
@@ -727,6 +714,46 @@ TEST(FunctionTest, LongArgumentList) {
   EXPECT_TRUE((
       std::is_same<IgnoredValue(bool, int, char*, int&, const long&),  // NOLINT
                    F::MakeResultIgnoredValue>::value));
+}
+
+TEST(Base64Unescape, InvalidString) {
+  std::string unescaped;
+  EXPECT_FALSE(Base64Unescape("(invalid)", &unescaped));
+}
+
+TEST(Base64Unescape, ShortString) {
+  std::string unescaped;
+  EXPECT_TRUE(Base64Unescape("SGVsbG8gd29ybGQh", &unescaped));
+  EXPECT_EQ("Hello world!", unescaped);
+}
+
+TEST(Base64Unescape, ShortStringWithPadding) {
+  std::string unescaped;
+  EXPECT_TRUE(Base64Unescape("SGVsbG8gd29ybGQ=", &unescaped));
+  EXPECT_EQ("Hello world", unescaped);
+}
+
+TEST(Base64Unescape, ShortStringWithoutPadding) {
+  std::string unescaped;
+  EXPECT_TRUE(Base64Unescape("SGVsbG8gd29ybGQ", &unescaped));
+  EXPECT_EQ("Hello world", unescaped);
+}
+
+TEST(Base64Unescape, LongStringWithWhiteSpaces) {
+  std::string escaped =
+      R"(TWFuIGlzIGRpc3Rpbmd1aXNoZWQsIG5vdCBvbmx5IGJ5IGhpcyByZWFzb24sIGJ1dCBieSB0aGlz
+  IHNpbmd1bGFyIHBhc3Npb24gZnJvbSBvdGhlciBhbmltYWxzLCB3aGljaCBpcyBhIGx1c3Qgb2Yg
+  dGhlIG1pbmQsIHRoYXQgYnkgYSBwZXJzZXZlcmFuY2Ugb2YgZGVsaWdodCBpbiB0aGUgY29udGlu
+  dWVkIGFuZCBpbmRlZmF0aWdhYmxlIGdlbmVyYXRpb24gb2Yga25vd2xlZGdlLCBleGNlZWRzIHRo
+  ZSBzaG9ydCB2ZWhlbWVuY2Ugb2YgYW55IGNhcm5hbCBwbGVhc3VyZS4=)";
+  std::string expected =
+      "Man is distinguished, not only by his reason, but by this singular "
+      "passion from other animals, which is a lust of the mind, that by a "
+      "perseverance of delight in the continued and indefatigable generation "
+      "of knowledge, exceeds the short vehemence of any carnal pleasure.";
+  std::string unescaped;
+  EXPECT_TRUE(Base64Unescape(escaped, &unescaped));
+  EXPECT_EQ(expected, unescaped);
 }
 
 }  // namespace
