@@ -27,13 +27,15 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-//
 // Low-level types and utilities for porting Google Mock to various
 // platforms.  All macros ending with _ and symbols defined in an
 // internal namespace are subject to change without notice.  Code
 // outside Google Mock MUST NOT USE THEM DIRECTLY.  Macros that don't
 // end with _ are part of Google Mock's public API and can be used by
 // code outside Google Mock.
+
+// IWYU pragma: private, include "gmock/gmock.h"
+// IWYU pragma: friend gmock/.*
 
 #ifndef GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_GMOCK_PORT_H_
 #define GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_GMOCK_PORT_H_
@@ -67,19 +69,37 @@
 #if !defined(GMOCK_DECLARE_bool_)
 
 // Macros for declaring flags.
-# define GMOCK_DECLARE_bool_(name) extern GTEST_API_ bool GMOCK_FLAG(name)
-# define GMOCK_DECLARE_int32_(name) extern GTEST_API_ int32_t GMOCK_FLAG(name)
-# define GMOCK_DECLARE_string_(name) \
-    extern GTEST_API_ ::std::string GMOCK_FLAG(name)
+#define GMOCK_DECLARE_bool_(name)          \
+  namespace testing {                      \
+  GTEST_API_ extern bool GMOCK_FLAG(name); \
+  } static_assert(true, "no-op to require trailing semicolon")
+#define GMOCK_DECLARE_int32_(name)            \
+  namespace testing {                         \
+  GTEST_API_ extern int32_t GMOCK_FLAG(name); \
+  } static_assert(true, "no-op to require trailing semicolon")
+#define GMOCK_DECLARE_string_(name)                 \
+  namespace testing {                               \
+  GTEST_API_ extern ::std::string GMOCK_FLAG(name); \
+  } static_assert(true, "no-op to require trailing semicolon")
 
 // Macros for defining flags.
-# define GMOCK_DEFINE_bool_(name, default_val, doc) \
-    GTEST_API_ bool GMOCK_FLAG(name) = (default_val)
-# define GMOCK_DEFINE_int32_(name, default_val, doc) \
-    GTEST_API_ int32_t GMOCK_FLAG(name) = (default_val)
-# define GMOCK_DEFINE_string_(name, default_val, doc) \
-    GTEST_API_ ::std::string GMOCK_FLAG(name) = (default_val)
-
+#define GMOCK_DEFINE_bool_(name, default_val, doc)  \
+  namespace testing {                               \
+  GTEST_API_ bool GMOCK_FLAG(name) = (default_val); \
+  } static_assert(true, "no-op to require trailing semicolon")
+#define GMOCK_DEFINE_int32_(name, default_val, doc)    \
+  namespace testing {                                  \
+  GTEST_API_ int32_t GMOCK_FLAG(name) = (default_val); \
+  } static_assert(true, "no-op to require trailing semicolon")
+#define GMOCK_DEFINE_string_(name, default_val, doc)         \
+  namespace testing {                                        \
+  GTEST_API_ ::std::string GMOCK_FLAG(name) = (default_val); \
+  } static_assert(true, "no-op to require trailing semicolon")
 #endif  // !defined(GMOCK_DECLARE_bool_)
+
+#if !defined(GMOCK_FLAG_GET)
+#define GMOCK_FLAG_GET(name) ::testing::GMOCK_FLAG(name)
+#define GMOCK_FLAG_SET(name, value) (void)(::testing::GMOCK_FLAG(name) = value)
+#endif  // !defined(GMOCK_FLAG_GET)
 
 #endif  // GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_GMOCK_PORT_H_

@@ -44,6 +44,7 @@
 #include <cstring>
 #include <ostream>  // NOLINT
 #include <string>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gmock/internal/gmock-port.h"
@@ -54,21 +55,22 @@ namespace internal {
 
 // Joins a vector of strings as if they are fields of a tuple; returns
 // the joined string.
-GTEST_API_ std::string JoinAsTuple(const Strings& fields) {
-  switch (fields.size()) {
-    case 0:
-      return "";
-    case 1:
-      return fields[0];
-    default:
-      std::string result = "(" + fields[0];
-      for (size_t i = 1; i < fields.size(); i++) {
-        result += ", ";
-        result += fields[i];
-      }
-      result += ")";
-      return result;
+GTEST_API_ std::string JoinAsKeyValueTuple(
+    const std::vector<const char*>& names, const Strings& values) {
+  GTEST_CHECK_(names.size() == values.size());
+  if (values.empty()) {
+    return "";
   }
+  const auto build_one = [&](const size_t i) {
+    return std::string(names[i]) + ": " + values[i];
+  };
+  std::string result = "(" + build_one(0);
+  for (size_t i = 1; i < values.size(); i++) {
+    result += ", ";
+    result += build_one(i);
+  }
+  result += ")";
+  return result;
 }
 
 // Converts an identifier name to a space-separated list of lower-case
@@ -132,10 +134,10 @@ static GTEST_DEFINE_STATIC_MUTEX_(g_log_mutex);
 // Returns true if and only if a log with the given severity is visible
 // according to the --gmock_verbose flag.
 GTEST_API_ bool LogIsVisible(LogSeverity severity) {
-  if (GMOCK_FLAG(verbose) == kInfoVerbosity) {
+  if (GMOCK_FLAG_GET(verbose) == kInfoVerbosity) {
     // Always show the log if --gmock_verbose=info.
     return true;
-  } else if (GMOCK_FLAG(verbose) == kErrorVerbosity) {
+  } else if (GMOCK_FLAG_GET(verbose) == kErrorVerbosity) {
     // Always hide it if --gmock_verbose=error.
     return false;
   } else {
@@ -211,7 +213,7 @@ constexpr char UnBase64Impl(char c, const char* const base64, char carry) {
 template <size_t... I>
 constexpr std::array<char, 256> UnBase64Impl(IndexSequence<I...>,
                                              const char* const base64) {
-  return {{UnBase64Impl(I, base64, 0)...}};
+  return {{UnBase64Impl(static_cast<char>(I), base64, 0)...}};
 }
 
 constexpr std::array<char, 256> UnBase64(const char* const base64) {
@@ -232,7 +234,7 @@ bool Base64Unescape(const std::string& encoded, std::string* decoded) {
     if (std::isspace(src) || src == '=') {
       continue;
     }
-    char src_bin = kUnBase64[src];
+    char src_bin = kUnBase64[static_cast<size_t>(src)];
     if (src_bin >= 64) {
       decoded->clear();
       return false;
