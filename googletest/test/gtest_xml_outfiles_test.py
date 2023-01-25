@@ -43,7 +43,7 @@ GTEST_OUTPUT_2_TEST = "gtest_xml_outfile2_test_"
 EXPECTED_XML_1 = """<?xml version="1.0" encoding="UTF-8"?>
 <testsuites tests="1" failures="0" disabled="0" errors="0" time="*" timestamp="*" name="AllTests">
   <testsuite name="PropertyOne" tests="1" failures="0" skipped="0" disabled="0" errors="0" time="*" timestamp="*">
-    <testcase name="TestSomeProperties" status="run" result="completed" time="*" timestamp="*" classname="PropertyOne">
+    <testcase name="TestSomeProperties" file="gtest_xml_outfile1_test_.cc" line="41" status="run" result="completed" time="*" timestamp="*" classname="PropertyOne">
       <properties>
         <property name="SetUpProp" value="1"/>
         <property name="TestSomeProperty" value="1"/>
@@ -57,7 +57,7 @@ EXPECTED_XML_1 = """<?xml version="1.0" encoding="UTF-8"?>
 EXPECTED_XML_2 = """<?xml version="1.0" encoding="UTF-8"?>
 <testsuites tests="1" failures="0" disabled="0" errors="0" time="*" timestamp="*" name="AllTests">
   <testsuite name="PropertyTwo" tests="1" failures="0" skipped="0" disabled="0" errors="0" time="*" timestamp="*">
-    <testcase name="TestSomeProperties" status="run" result="completed" time="*" timestamp="*" classname="PropertyTwo">
+    <testcase name="TestSomeProperties" file="gtest_xml_outfile2_test_.cc" line="41" status="run" result="completed" time="*" timestamp="*" classname="PropertyTwo">
       <properties>
         <property name="SetUpProp" value="2"/>
         <property name="TestSomeProperty" value="2"/>
@@ -108,15 +108,17 @@ class GTestXMLOutFilesTest(gtest_xml_test_utils.GTestXMLTestCase):
     command = [gtest_prog_path, "--gtest_output=xml:%s" % self.output_dir_]
     p = gtest_test_utils.Subprocess(command,
                                     working_dir=gtest_test_utils.GetTempDir())
-    self.assert_(p.exited)
-    self.assertEquals(0, p.exit_code)
+    self.assertTrue(p.exited)
+    self.assertEqual(0, p.exit_code)
 
     output_file_name1 = test_name + ".xml"
     output_file1 = os.path.join(self.output_dir_, output_file_name1)
     output_file_name2 = 'lt-' + output_file_name1
     output_file2 = os.path.join(self.output_dir_, output_file_name2)
-    self.assert_(os.path.isfile(output_file1) or os.path.isfile(output_file2),
-                 output_file1)
+    self.assertTrue(
+        os.path.isfile(output_file1) or os.path.isfile(output_file2),
+        output_file1,
+    )
 
     expected = minidom.parseString(expected_xml)
     if os.path.isfile(output_file1):

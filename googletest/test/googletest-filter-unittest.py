@@ -113,6 +113,9 @@ TEST_CASE_REGEX = re.compile(r'^\[\-+\] \d+ tests? from (\w+(/\w+)?)')
 # Regex for parsing test names from Google Test's output.
 TEST_REGEX = re.compile(r'^\[\s*RUN\s*\].*\.(\w+(/\w+)?)')
 
+# Regex for parsing disabled banner from Google Test's output
+DISABLED_BANNER_REGEX = re.compile(r'^\[\s*DISABLED\s*\] (.*)')
+
 # The command line flag to tell Google Test to output the list of tests it
 # will run.
 LIST_TESTS_FLAG = '--gtest_list_tests'
@@ -206,6 +209,17 @@ def RunAndExtractTestList(args = None):
   return (tests_run, p.exit_code)
 
 
+def RunAndExtractDisabledBannerList(args=None):
+  """Runs the test program and returns tests that printed a disabled banner."""
+  p = gtest_test_utils.Subprocess([COMMAND] + (args or []), env=environ)
+  banners_printed = []
+  for line in p.output.split('\n'):
+    match = DISABLED_BANNER_REGEX.match(line)
+    if match is not None:
+      banners_printed.append(match.group(1))
+  return banners_printed
+
+
 def InvokeWithModifiedEnv(extra_env, function, *args, **kwargs):
   """Runs the given function and arguments in a modified environment."""
   try:
@@ -236,10 +250,10 @@ class GTestFilterUnitTest(gtest_test_utils.TestCase):
     """Asserts that two sets are equal."""
 
     for elem in lhs:
-      self.assert_(elem in rhs, '%s in %s' % (elem, rhs))
+      self.assertTrue(elem in rhs, '%s in %s' % (elem, rhs))
 
     for elem in rhs:
-      self.assert_(elem in lhs, '%s in %s' % (elem, lhs))
+      self.assertTrue(elem in lhs, '%s in %s' % (elem, lhs))
 
   def AssertPartitionIsValid(self, set_var, list_of_sets):
     """Asserts that list_of_sets is a valid partition of set_var."""
@@ -581,13 +595,13 @@ class GTestFilterUnitTest(gtest_test_utils.TestCase):
 
     shard_status_file = os.path.join(gtest_test_utils.GetTempDir(),
                                      'shard_status_file')
-    self.assert_(not os.path.exists(shard_status_file))
+    self.assertTrue(not os.path.exists(shard_status_file))
 
     extra_env = {SHARD_STATUS_FILE_ENV_VAR: shard_status_file}
     try:
       InvokeWithModifiedEnv(extra_env, RunAndReturnOutput)
     finally:
-      self.assert_(os.path.exists(shard_status_file))
+      self.assertTrue(os.path.exists(shard_status_file))
       os.remove(shard_status_file)
 
   def testShardStatusFileIsCreatedWithListTests(self):
@@ -595,7 +609,7 @@ class GTestFilterUnitTest(gtest_test_utils.TestCase):
 
     shard_status_file = os.path.join(gtest_test_utils.GetTempDir(),
                                      'shard_status_file2')
-    self.assert_(not os.path.exists(shard_status_file))
+    self.assertTrue(not os.path.exists(shard_status_file))
 
     extra_env = {SHARD_STATUS_FILE_ENV_VAR: shard_status_file}
     try:
@@ -605,13 +619,34 @@ class GTestFilterUnitTest(gtest_test_utils.TestCase):
     finally:
       # This assertion ensures that Google Test enumerated the tests as
       # opposed to running them.
-      self.assert_('[==========]' not in output,
-                   'Unexpected output during test enumeration.\n'
-                   'Please ensure that LIST_TESTS_FLAG is assigned the\n'
-                   'correct flag value for listing Google Test tests.')
+      self.assertTrue(
+          '[==========]' not in output,
+          (
+              'Unexpected output during test enumeration.\n'
+              'Please ensure that LIST_TESTS_FLAG is assigned the\n'
+              'correct flag value for listing Google Test tests.'
+          ),
+      )
 
-      self.assert_(os.path.exists(shard_status_file))
+      self.assertTrue(os.path.exists(shard_status_file))
       os.remove(shard_status_file)
+
+  def testDisabledBanner(self):
+    """Tests that the disabled banner prints only tests that match filter."""
+    make_filter = lambda s: ['--%s=%s' % (FILTER_FLAG, s)]
+
+    banners = RunAndExtractDisabledBannerList(make_filter('*'))
+    self.AssertSetEqual(banners, [
+        'BarTest.DISABLED_TestFour', 'BarTest.DISABLED_TestFive',
+        'BazTest.DISABLED_TestC'
+    ])
+
+    banners = RunAndExtractDisabledBannerList(make_filter('Bar*'))
+    self.AssertSetEqual(
+        banners, ['BarTest.DISABLED_TestFour', 'BarTest.DISABLED_TestFive'])
+
+    banners = RunAndExtractDisabledBannerList(make_filter('*-Bar*'))
+    self.AssertSetEqual(banners, ['BazTest.DISABLED_TestC'])
 
   if SUPPORTS_DEATH_TESTS:
     def testShardingWorksWithDeathTests(self):
